@@ -1,4 +1,4 @@
-"""Integration 101 Template integration using DataUpdateCoordinator."""
+"""Qingping IoT Cloud integration using DataUpdateCoordinator."""
 
 from dataclasses import dataclass
 from datetime import timedelta
@@ -6,40 +6,39 @@ import logging
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
-    CONF_HOST,
-    CONF_PASSWORD,
+    CONF_CLIENT_ID,
+    CONF_CLIENT_SECRET,
     CONF_SCAN_INTERVAL,
-    CONF_USERNAME,
 )
 from homeassistant.core import DOMAIN, HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .api import API, APIAuthError, Device, DeviceType
+from qingping_iot_cloud import QingpingCloud, QingpingDevice, QingpingDeviceProperty
+from qingping_iot_cloud.QingpingCloud import APIAuthError, APIConnectionError
 from .const import DEFAULT_SCAN_INTERVAL
 
 _LOGGER = logging.getLogger(__name__)
 
 
 @dataclass
-class ExampleAPIData:
+class QingpingAPIData:
     """Class to hold api data."""
 
     controller_name: str
-    devices: list[Device]
+    devices: list[QingpingDevice]
 
 
-class ExampleCoordinator(DataUpdateCoordinator):
-    """My example coordinator."""
+class QingpingCoordinator(DataUpdateCoordinator):
+    """My Qingping coordinator."""
 
-    data: ExampleAPIData
+    data: QingpingAPIData
 
     def __init__(self, hass: HomeAssistant, config_entry: ConfigEntry) -> None:
         """Initialize coordinator."""
 
         # Set variables from values entered in config flow setup
-        self.host = config_entry.data[CONF_HOST]
-        self.user = config_entry.data[CONF_USERNAME]
-        self.pwd = config_entry.data[CONF_PASSWORD]
+        self.app_key = config_entry.data[CONF_CLIENT_ID]
+        self.app_secret = config_entry.data[CONF_CLIENT_SECRET]
 
         # set variables from options.  You need a default here incase options have not been set
         self.poll_interval = config_entry.options.get(
@@ -59,7 +58,7 @@ class ExampleCoordinator(DataUpdateCoordinator):
         )
 
         # Initialise your api here
-        self.api = API(host=self.host, user=self.user, pwd=self.pwd)
+        self.cloud = QingpingCloud(app_key=self.app_key, app_secret=self.app_secret)
 
     async def async_update_data(self):
         """Fetch data from API endpoint.
@@ -68,9 +67,11 @@ class ExampleCoordinator(DataUpdateCoordinator):
         so entities can quickly look up their data.
         """
         try:
-            if not self.api.connected:
-                await self.hass.async_add_executor_job(self.api.connect)
-            devices = await self.hass.async_add_executor_job(self.api.get_devices)
+            # TODO: proper credentials caching
+            #if not self.cloud.connected:
+            #    await self.hass.async_add_executor_job(self.cloud.connect)
+            await self.hass.async_add_executor_job(self.cloud.connect)
+            devices = await self.hass.async_add_executor_job(self.cloud.get_devices)
         except APIAuthError as err:
             _LOGGER.error(err)
             raise UpdateFailed(err) from err
@@ -79,18 +80,19 @@ class ExampleCoordinator(DataUpdateCoordinator):
             raise UpdateFailed(f"Error communicating with API: {err}") from err
 
         # What is returned here is stored in self.data by the DataUpdateCoordinator
-        return ExampleAPIData(self.api.controller_name, devices)
+        #return QingpingAPIData(self.cloud.controller_name, devices)
+        return QingpingAPIData(self.cloud.API_URL_PREFIX, devices) # TODO: ???
 
-    def get_device_by_id(
-        self, device_type: DeviceType, device_id: int
-    ) -> Device | None:
-        """Return device by device id."""
+    def get_device_by_mac(
+        self, device_mac: int
+    ) -> QingpingDevice.QingpingDevice | None:
+        """Return device by device MAC."""
         # Called by the binary sensors and sensors to get their updated data from self.data
         try:
             return [
                 device
                 for device in self.data.devices
-                if device.device_type == device_type and device.device_id == device_id
+                if device.mac == device_mac
             ][0]
         except IndexError:
             return None

@@ -1,17 +1,20 @@
 {
-  "domain": "msp_integration_101_template",
-  "name": "MSP Integration 101 Template Example",
+  "domain": "qingping_iot_cloud",
+  "name": "Qingping IoT Cloud",
   "codeowners": [
-    "@msp1974"
+    "@danielskowronski"
   ],
   "config_flow": true,
   "dependencies": [],
-  "documentation": "https://github.com/msp1974/HAIntegrationExamples",
+  "documentation": "https://github.com/danielskowronski/HomeAssistantQingpingIoTCloud",
   "homekit": {},
-  "iot_class": "local_polling",
-  "requirements": [],
+  "integration_type": "hub",
+  "iot_class": "cloud_polling",
+  "requirements": [
+    "qingping-iot-cloud==0.1.1"
+  ],
   "single_config_entry": false,
   "ssdp": [],
-  "version": "1.0.0",
+  "version": "0.0.1",
   "zeroconf": []
 }

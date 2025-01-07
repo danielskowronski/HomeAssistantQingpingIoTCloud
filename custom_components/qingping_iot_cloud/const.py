@@ -1,6 +1,6 @@
-"""Constants for the Integration 101 Template integration."""
+"""Constants for the Qingping IoT Cloud integration."""
 
-DOMAIN = "msp_integration_101_template"
+DOMAIN = "qingping_iot_cloud"
 
-DEFAULT_SCAN_INTERVAL = 60
-MIN_SCAN_INTERVAL = 10
+DEFAULT_SCAN_INTERVAL = 300
+MIN_SCAN_INTERVAL = 60

@@ -1,4 +1,4 @@
-"""Config flow for Integration 101 Template integration."""
+"""Config flow for Qingping IoT Cloud integration."""
 
 from __future__ import annotations
 
@@ -14,15 +14,15 @@ from homeassistant.config_entries import (
     OptionsFlow,
 )
 from homeassistant.const import (
-    CONF_HOST,
-    CONF_PASSWORD,
+    CONF_CLIENT_ID,
+    CONF_CLIENT_SECRET,
     CONF_SCAN_INTERVAL,
-    CONF_USERNAME,
 )
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 
-from .api import API, APIAuthError, APIConnectionError
+from qingping_iot_cloud import QingpingCloud
+from qingping_iot_cloud.QingpingCloud import APIAuthError, APIConnectionError
 from .const import DEFAULT_SCAN_INTERVAL, DOMAIN, MIN_SCAN_INTERVAL
 
 _LOGGER = logging.getLogger(__name__)
@@ -30,9 +30,8 @@ _LOGGER = logging.getLogger(__name__)
 # TODO adjust the data schema to the data that you need
 STEP_USER_DATA_SCHEMA = vol.Schema(
     {
-        vol.Required(CONF_HOST, description={"suggested_value": "10.10.10.1"}): str,
-        vol.Required(CONF_USERNAME, description={"suggested_value": "test"}): str,
-        vol.Required(CONF_PASSWORD, description={"suggested_value": "1234"}): str,
+        vol.Required(CONF_CLIENT_ID): str,
+        vol.Required(CONF_CLIENT_SECRET): str,
     }
 )
 
@@ -49,21 +48,20 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
     # await hass.async_add_executor_job(
     #     your_validate_func, data[CONF_USERNAME], data[CONF_PASSWORD]
     # )
-
-    api = API(data[CONF_HOST], data[CONF_USERNAME], data[CONF_PASSWORD])
+    cloud = QingpingCloud(data[CONF_CLIENT_ID], data[CONF_CLIENT_SECRET])
     try:
-        await hass.async_add_executor_job(api.connect)
+        await hass.async_add_executor_job(cloud.connect)
         # If you cannot connect, raise CannotConnect
         # If the authentication is wrong, raise InvalidAuth
     except APIAuthError as err:
         raise InvalidAuth from err
     except APIConnectionError as err:
         raise CannotConnect from err
-    return {"title": f"Example Integration - {data[CONF_HOST]}"}
+    return {"title": f"Qingping IoT Cloud - {data[CONF_CLIENT_ID]}"}
 
 
-class ExampleConfigFlow(ConfigFlow, domain=DOMAIN):
-    """Handle a config flow for Example Integration."""
+class QingpingIoTCloudConfigFlow(ConfigFlow, domain=DOMAIN):
+    """Handle a config flow for Qingping IoT Cloud Integration."""
 
     VERSION = 1
     _input_data: dict[str, Any]
@@ -74,7 +72,7 @@ class ExampleConfigFlow(ConfigFlow, domain=DOMAIN):
         """Get the options flow for this handler."""
         # Remove this method and the ExampleOptionsFlowHandler class
         # if you do not want any options for your integration.
-        return ExampleOptionsFlowHandler(config_entry)
+        return QingpingIoTCloudOptionsFlowHandler()
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -124,7 +122,8 @@ class ExampleConfigFlow(ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             try:
-                user_input[CONF_HOST] = config_entry.data[CONF_HOST]
+                user_input[CONF_CLIENT_ID] = config_entry.data[CONF_CLIENT_ID]
+                user_input[CONF_CLIENT_SECRET] = config_entry.data[CONF_CLIENT_SECRET]
                 await validate_input(self.hass, user_input)
             except CannotConnect:
                 errors["base"] = "cannot_connect"
@@ -145,42 +144,39 @@ class ExampleConfigFlow(ConfigFlow, domain=DOMAIN):
             data_schema=vol.Schema(
                 {
                     vol.Required(
-                        CONF_USERNAME, default=config_entry.data[CONF_USERNAME]
+                        CONF_CLIENT_ID, default=config_entry.data[CONF_CLIENT_ID]
                     ): str,
-                    vol.Required(CONF_PASSWORD): str,
+                    vol.Required(
+                        CONF_CLIENT_SECRET, default=config_entry.data[CONF_CLIENT_SECRET]
+                    ): str,
                 }
             ),
             errors=errors,
         )
 
+OPTIONS_SCHEMA=vol.Schema(
+    {
+                vol.Required(
+                    CONF_SCAN_INTERVAL,
+                ): (vol.All(vol.Coerce(int), vol.Clamp(min=MIN_SCAN_INTERVAL))),
+    }
+)
 
-class ExampleOptionsFlowHandler(OptionsFlow):
+class QingpingIoTCloudOptionsFlowHandler(OptionsFlow):
     """Handles the options flow."""
-
-    def __init__(self, config_entry: ConfigEntry) -> None:
-        """Initialize options flow."""
-        self.config_entry = config_entry
-        self.options = dict(config_entry.options)
 
     async def async_step_init(self, user_input=None):
         """Handle options flow."""
         if user_input is not None:
-            options = self.config_entry.options | user_input
-            return self.async_create_entry(title="", data=options)
+            return self.async_create_entry(title="", data=user_input)
 
-        # It is recommended to prepopulate options fields with default values if available.
-        # These will be the same default values you use on your coordinator for setting variable values
-        # if the option has not been set.
-        data_schema = vol.Schema(
-            {
-                vol.Required(
-                    CONF_SCAN_INTERVAL,
-                    default=self.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
-                ): (vol.All(vol.Coerce(int), vol.Clamp(min=MIN_SCAN_INTERVAL))),
-            }
+
+        return self.async_show_form(
+            step_id="init",
+            data_schema=self.add_suggested_values_to_schema(
+                OPTIONS_SCHEMA, self.config_entry.options
+            ),
         )
-
-        return self.async_show_form(step_id="init", data_schema=data_schema)
 
 
 class CannotConnect(HomeAssistantError):
