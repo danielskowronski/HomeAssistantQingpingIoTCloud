@@ -7,14 +7,15 @@
   "config_flow": true,
   "dependencies": [],
   "documentation": "https://github.com/danielskowronski/HomeAssistantQingpingIoTCloud",
+  "issue_tracker": "https://github.com/danielskowronski/HomeAssistantQingpingIoTCloud/issues",
   "homekit": {},
   "integration_type": "hub",
   "iot_class": "cloud_polling",
   "requirements": [
-    "qingping-iot-cloud==0.1.1"
+    "qingping-iot-cloud==0.2.0a5"
   ],
   "single_config_entry": false,
   "ssdp": [],
-  "version": "0.0.1",
+  "version": "0.1.0a1",
   "zeroconf": []
 }

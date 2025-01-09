@@ -9,7 +9,7 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import UnitOfTemperature, SIGNAL_STRENGTH_DECIBELS_MILLIWATT, PERCENTAGE, CONCENTRATION_PARTS_PER_MILLION, STATE_UNAVAILABLE
+from homeassistant.const import STATE_UNAVAILABLE
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -43,12 +43,17 @@ async def async_setup_entry(
     ]
     for device in coordinator.data.devices:
         # FIXME: read device properties live or from config flow
-        # FIXME: QingpingDeviceProperty should be enum, ideally compatible with HA
-        sensors.append(QingpingSensor(coordinator, device, "battery"))
-        sensors.append(QingpingSensor(coordinator, device, "signal"))
-        sensors.append(QingpingSensor(coordinator, device, "temperature"))
-        sensors.append(QingpingSensor(coordinator, device, "humidity"))
-        sensors.append(QingpingSensor(coordinator, device, "co2"))
+        # official sensor matrix is incorrect -> https://developer.qingping.co/cloud-to-cloud/specification-guidelines#2-products-list-and-support-note
+        # since it's unlikely data frame from given device changes (i.e. device always sends same parameters) 
+        # it's safe enough to assume that what's visible for given device at integration launch is always going to correct
+        # if not - we can just reload the integration
+        for property in device.data.keys():
+            sensors.append(QingpingSensor(coordinator, device, property))
+        #sensors.append(QingpingSensor(coordinator, device, "battery"))
+        #sensors.append(QingpingSensor(coordinator, device, "signal"))
+        #sensors.append(QingpingSensor(coordinator, device, "temperature"))
+        #sensors.append(QingpingSensor(coordinator, device, "humidity"))
+        #sensors.append(QingpingSensor(coordinator, device, "co2"))
 
     # Create the sensors.
     async_add_entities(sensors)
@@ -68,8 +73,8 @@ class QingpingSensor(CoordinatorEntity, SensorEntity):
         self._parse_values()
         
     def _parse_values(self) -> None:
-        self._raw_value = float(self.device.get_property(self.attribute).value)
-        self._is_available = not math.isnan(self._raw_value) 
+        self._raw_value = self.device.get_property(self.attribute).get_ha_value()
+        self._is_available = self._raw_value is not None
 
     @callback
     def _handle_coordinator_update(self) -> None:
@@ -88,16 +93,21 @@ class QingpingSensor(CoordinatorEntity, SensorEntity):
         """Return device class."""
         # https://developers.home-assistant.io/docs/core/entity/sensor/#available-device-classes
         # FIXME: support proper device classes
-        if self.attribute == "battery":
-            return SensorDeviceClass.BATTERY
-        if self.attribute == "signal":
-            return SensorDeviceClass.SIGNAL_STRENGTH
-        if self.attribute == "temperature":
-            return SensorDeviceClass.TEMPERATURE
-        if self.attribute == "humidity":
-            return SensorDeviceClass.HUMIDITY
-        if self.attribute == "co2":
-            return SensorDeviceClass.CO2
+        ha_class = self.device.get_property(self.attribute).get_ha_class()
+        if ha_class is None:
+            return None
+        else:
+            return SensorDeviceClass(ha_class)
+        #if self.attribute == "battery":
+        #    return SensorDeviceClass.BATTERY
+        #if self.attribute == "signal":
+        #    return SensorDeviceClass.SIGNAL_STRENGTH
+        #if self.attribute == "temperature":
+        #    return SensorDeviceClass.TEMPERATURE
+        #if self.attribute == "humidity":
+        #    return SensorDeviceClass.HUMIDITY
+        #if self.attribute == "co2":
+        #    return SensorDeviceClass.CO2
     @property
     def device_info(self) -> DeviceInfo:
         """Return device information."""
@@ -122,7 +132,7 @@ class QingpingSensor(CoordinatorEntity, SensorEntity):
     @property
     def name(self) -> str:
         """Return the name of the sensor."""
-        return f"{self.device.name} {self.attribute}"
+        return f"{self.device.name} {self.device.get_property(self.attribute).get_ha_title()}"
 
     @property
     def available(self):
@@ -142,16 +152,17 @@ class QingpingSensor(CoordinatorEntity, SensorEntity):
         """Return unit of temperature."""
         #return UnitOfTemperature.CELSIUS
         # TODO: support all options from QingpingDeviceProperty.DEV_PROP_SPEC, sync values
-        if self.attribute == "battery":
-            return PERCENTAGE
-        if self.attribute == "signal":
-            return SIGNAL_STRENGTH_DECIBELS_MILLIWATT
-        if self.attribute == "temperature":
-            return UnitOfTemperature.CELSIUS
-        if self.attribute == "humidity":
-            return PERCENTAGE
-        if self.attribute == "co2":
-            return CONCENTRATION_PARTS_PER_MILLION
+        return self.device.get_property(self.attribute).get_unit()
+        #if self.attribute == "battery":
+        #    return PERCENTAGE
+        #if self.attribute == "signal":
+        #    return SIGNAL_STRENGTH_DECIBELS_MILLIWATT
+        #if self.attribute == "temperature":
+        #    return UnitOfTemperature.CELSIUS
+        #if self.attribute == "humidity":
+        #    return PERCENTAGE
+        #if self.attribute == "co2":
+        #    return CONCENTRATION_PARTS_PER_MILLION
 
     @property
     def state_class(self) -> str | None:
