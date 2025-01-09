@@ -6,7 +6,17 @@ Home Assistant integration for Wi-Fi enabled Qingping devices connected to Qingp
 
 ## How to use this
 
-[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=danielskowronski&repository=HomeAssistantQingpingIoTCloud)
+### Install
+
+<!-- [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=danielskowronski&repository=HomeAssistantQingpingIoTCloud) --> 
+
+To install this repo, you need to add it as [Custom repository](https://hacs.xyz/docs/faq/custom_repositories/) in [HACS](https://hacs.xyz). Use type **integration** and this URL:
+
+```
+https://github.com/danielskowronski/HomeAssistantQingpingIoTCloud
+```
+
+### Connect to cloud
 
 1. Download `Qingping IoT` app from [qingpingiot.com](https://www.qingpingiot.com/) or `Qingping+` app from [qingping.co/plus](https://www.qingping.co/plus)
 2. Follow typical process or registering account and pairing device as per in-app instructions
@@ -17,7 +27,6 @@ Home Assistant integration for Wi-Fi enabled Qingping devices connected to Qingp
 5. In Home Assistant, add configure this custom integration with key-secret pair
    1. If you have multiple accounts across one or two platforms, you can add those as subsequent hubs
    2. *App ID* is added to hub name to avoid confusion
-
 
 ---
 
