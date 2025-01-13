@@ -2,6 +2,7 @@
 
 import math
 import logging
+import datetime
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -17,7 +18,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 #from .api import Device, DeviceType
 from qingping_iot_cloud import QingpingCloud, QingpingDevice, QingpingDeviceProperty
-from .const import DOMAIN
+from .const import DOMAIN, MAX_DELAY_MULTIPLIER
 from .coordinator import QingpingCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -74,7 +75,7 @@ class QingpingSensor(CoordinatorEntity, SensorEntity):
         
     def _parse_values(self) -> None:
         self._raw_value = self.device.get_property(self.attribute).get_ha_value()
-        self._is_available = self._raw_value is not None
+        self._is_missing = self._raw_value is None
 
     @callback
     def _handle_coordinator_update(self) -> None:
@@ -134,10 +135,25 @@ class QingpingSensor(CoordinatorEntity, SensorEntity):
         """Return the name of the sensor."""
         return f"{self.device.name} {self.device.get_property(self.attribute).get_ha_title()}"
 
+    def _seconds_since_last_update(self) -> int:
+        device_last_timestamp = int(self.device.get_property("timestamp").value)
+        now = int(datetime.datetime.timestamp(datetime.datetime.now()))
+        delta = now - device_last_timestamp
+        #_LOGGER.error(f"now: {now}, last: {device_last_timestamp}, delta: {delta}")
+        return delta
+
     @property
     def available(self):
-        # Indicate whether the entity is available
-        return self._is_available
+        if self._is_missing:
+            return False
+        if self.attribute == "timestamp": # timestamp should always be reported
+            return True
+        delta = self._seconds_since_last_update()
+        max_delay = MAX_DELAY_MULTIPLIER*self.device.setting_report_interval
+        if delta > max_delay:
+            _LOGGER.info(f"Device {self.device_mac} is offline for {delta} seconds, which is more than MAX_DELAY_MULTIPLIER({MAX_DELAY_MULTIPLIER}) * setting_report_interval({self.device.setting_report_interval})")
+            return False
+        return True
 
     @property
     def native_value(self) -> int | float:
@@ -145,7 +161,7 @@ class QingpingSensor(CoordinatorEntity, SensorEntity):
         # Using native value and native unit of measurement, allows you to change units
         # in Lovelace and HA will automatically calculate the correct value.
         #return float(self.device.state)
-        return STATE_UNAVAILABLE if not self._is_available else self._raw_value
+        return STATE_UNAVAILABLE if not self.available else self._raw_value
 
     @property
     def native_unit_of_measurement(self) -> str | None:
