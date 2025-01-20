@@ -134,7 +134,7 @@ async def handle_webhook(
         diagnose_data = f"{webhook_id} received webhook payload: {incoming_data}"
         _LOGGER.debug(diagnose_data)
 
-        mac = incoming_data["info"]["mac"] # required for data to be valid
+        mac = incoming_data["payload"]["info"]["mac"] # required for data to be valid
         new_data = {}
 
         # FIXME: sort incoming_data["data"] by time as ther emay be more than one frame
