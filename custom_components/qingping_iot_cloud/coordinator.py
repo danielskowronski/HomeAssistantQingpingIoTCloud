@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from datetime import timedelta
 import logging
+import asyncio
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
@@ -15,7 +16,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 
 from qingping_iot_cloud import QingpingCloud, QingpingDevice, QingpingDeviceProperty
 from qingping_iot_cloud.QingpingCloud import APIAuthError, APIConnectionError
-from .const import DEFAULT_SCAN_INTERVAL
+from .const import DEFAULT_SCAN_INTERVAL, HTTP_GET_TIMEOUT
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -59,29 +60,26 @@ class QingpingCoordinator(DataUpdateCoordinator):
 
         # Initialise your api here
         self.cloud = QingpingCloud(app_key=self.app_key, app_secret=self.app_secret)
-
+    
     async def async_update_data(self):
         """Fetch data from API endpoint.
 
         This is the place to pre-process the data to lookup tables
         so entities can quickly look up their data.
         """
+        _LOGGER.debug("Starting QingpingCoordinator.async_update_data")
         try:
-            # TODO: proper credentials caching
-            #if not self.cloud.connected:
-            #    await self.hass.async_add_executor_job(self.cloud.connect)
-            await self.hass.async_add_executor_job(self.cloud.connect)
-            devices = await self.hass.async_add_executor_job(self.cloud.get_devices)
-        except APIAuthError as err:
-            _LOGGER.error(err)
-            raise UpdateFailed(err) from err
+            await asyncio.wait_for(self.hass.async_add_executor_job(self.cloud.connect), HTTP_GET_TIMEOUT)
+            devices = await asyncio.wait_for(self.hass.async_add_executor_job(self.cloud.get_devices), HTTP_GET_TIMEOUT)
         except Exception as err:
             # This will show entities as unavailable by raising UpdateFailed exception
+            _LOGGER.error(err)
+            #_LOGGER.debug(f"Failed to update devices ({err}), marking them as unavailable immediately")
+            #return QingpingAPIData(self.cloud.API_URL_PREFIX, [])
             raise UpdateFailed(f"Error communicating with API: {err}") from err
 
         # What is returned here is stored in self.data by the DataUpdateCoordinator
-        #return QingpingAPIData(self.cloud.controller_name, devices)
-        return QingpingAPIData(self.cloud.API_URL_PREFIX, devices) # TODO: ???
+        return QingpingAPIData(self.cloud.API_URL_PREFIX, devices)
 
     def get_device_by_mac(
         self, device_mac: int

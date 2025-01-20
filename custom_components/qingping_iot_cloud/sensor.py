@@ -35,28 +35,10 @@ async def async_setup_entry(
         config_entry.entry_id
     ].coordinator
 
-    # Enumerate all the sensors in your data value from your DataUpdateCoordinator and add an instance of your sensor class
-    # to a list for each one.
-    # This maybe different in your specific case, depending on how your data is structured
-    sensors = [
-        #QingpingSensor(coordinator, device)
-        #for device in coordinator.data.devices
-    ]
+    sensors = [ ]
     for device in coordinator.data.devices:
-        # FIXME: read device properties live or from config flow
-        # official sensor matrix is incorrect -> https://developer.qingping.co/cloud-to-cloud/specification-guidelines#2-products-list-and-support-note
-        # since it's unlikely data frame from given device changes (i.e. device always sends same parameters) 
-        # it's safe enough to assume that what's visible for given device at integration launch is always going to correct
-        # if not - we can just reload the integration
         for property in device.data.keys():
             sensors.append(QingpingSensor(coordinator, device, property))
-        #sensors.append(QingpingSensor(coordinator, device, "battery"))
-        #sensors.append(QingpingSensor(coordinator, device, "signal"))
-        #sensors.append(QingpingSensor(coordinator, device, "temperature"))
-        #sensors.append(QingpingSensor(coordinator, device, "humidity"))
-        #sensors.append(QingpingSensor(coordinator, device, "co2"))
-
-    # Create the sensors.
     async_add_entities(sensors)
 
 
@@ -70,7 +52,6 @@ class QingpingSensor(CoordinatorEntity, SensorEntity):
         self.device_mac = device.mac
         self.device_mac_formatted = (":".join(self.device_mac[i:i+2] for i in range(0, len(self.device_mac), 2))).upper()
         self.attribute = attribute
-        
         self._parse_values()
         
     def _parse_values(self) -> None:
@@ -85,8 +66,6 @@ class QingpingSensor(CoordinatorEntity, SensorEntity):
             self.device_mac
         )
         self._parse_values()
-        _LOGGER.debug("Device: %s", self.device)
-        #_LOGGER.warning(f"_handle_coordinator_update: {self.device_mac_formatted}")
         self.async_write_ha_state()
 
     @property
@@ -99,16 +78,6 @@ class QingpingSensor(CoordinatorEntity, SensorEntity):
             return None
         else:
             return SensorDeviceClass(ha_class)
-        #if self.attribute == "battery":
-        #    return SensorDeviceClass.BATTERY
-        #if self.attribute == "signal":
-        #    return SensorDeviceClass.SIGNAL_STRENGTH
-        #if self.attribute == "temperature":
-        #    return SensorDeviceClass.TEMPERATURE
-        #if self.attribute == "humidity":
-        #    return SensorDeviceClass.HUMIDITY
-        #if self.attribute == "co2":
-        #    return SensorDeviceClass.CO2
     @property
     def device_info(self) -> DeviceInfo:
         """Return device information."""
@@ -116,7 +85,6 @@ class QingpingSensor(CoordinatorEntity, SensorEntity):
         # If your device is created elsewhere, you can just specify the indentifiers parameter.
         # If your device connects via another device, add via_device parameter with the indentifiers of that device.
         return DeviceInfo(
-            #name=f"Qingping_{self.device_mac}_{self.attribute}",
             name=f"{self.device.name}",
             manufacturer="Qingping",
             model=self.device.product_en_name,
@@ -134,56 +102,47 @@ class QingpingSensor(CoordinatorEntity, SensorEntity):
     def name(self) -> str:
         """Return the name of the sensor."""
         return f"{self.device.name} {self.device.get_property(self.attribute).get_ha_title()}"
+          
 
     def _seconds_since_last_update(self) -> int:
         device_last_timestamp = int(self.device.get_property("timestamp").value)
         now = int(datetime.datetime.timestamp(datetime.datetime.now()))
         delta = now - device_last_timestamp
-        #_LOGGER.error(f"now: {now}, last: {device_last_timestamp}, delta: {delta}")
         return delta
 
     @property
     def available(self):
-        if self._is_missing:
-            return False
-        if self.attribute == "timestamp": # timestamp should always be reported
+        if self.coordinator.last_update_success:
+            if self._is_missing:
+                return False
+            if self.attribute == "timestamp": # timestamp should always be reported
+                return True
+            delta = self._seconds_since_last_update()
+            max_delay = MAX_DELAY_MULTIPLIER*self.device.setting_report_interval
+            if delta > max_delay:
+                _LOGGER.info(f"Device {self.device_mac} is offline for {delta} seconds, which is more than MAX_DELAY_MULTIPLIER({MAX_DELAY_MULTIPLIER}) * setting_report_interval({self.device.setting_report_interval})")
+                return False
             return True
-        delta = self._seconds_since_last_update()
-        max_delay = MAX_DELAY_MULTIPLIER*self.device.setting_report_interval
-        if delta > max_delay:
-            _LOGGER.info(f"Device {self.device_mac} is offline for {delta} seconds, which is more than MAX_DELAY_MULTIPLIER({MAX_DELAY_MULTIPLIER}) * setting_report_interval({self.device.setting_report_interval})")
-            return False
-        return True
+        return False
 
     @property
     def native_value(self) -> int | float:
         """Return the state of the entity."""
         # Using native value and native unit of measurement, allows you to change units
         # in Lovelace and HA will automatically calculate the correct value.
-        #return float(self.device.state)
         return STATE_UNAVAILABLE if not self.available else self._raw_value
 
     @property
     def native_unit_of_measurement(self) -> str | None:
         """Return unit of temperature."""
-        #return UnitOfTemperature.CELSIUS
-        # TODO: support all options from QingpingDeviceProperty.DEV_PROP_SPEC, sync values
         return self.device.get_property(self.attribute).get_unit()
-        #if self.attribute == "battery":
-        #    return PERCENTAGE
-        #if self.attribute == "signal":
-        #    return SIGNAL_STRENGTH_DECIBELS_MILLIWATT
-        #if self.attribute == "temperature":
-        #    return UnitOfTemperature.CELSIUS
-        #if self.attribute == "humidity":
-        #    return PERCENTAGE
-        #if self.attribute == "co2":
-        #    return CONCENTRATION_PARTS_PER_MILLION
 
     @property
     def state_class(self) -> str | None:
         """Return state class."""
         # https://developers.home-assistant.io/docs/core/entity/sensor/#available-state-classes
+        if self.attribute == "timestamp":
+            return None
         return SensorStateClass.MEASUREMENT
 
     @property
@@ -191,7 +150,7 @@ class QingpingSensor(CoordinatorEntity, SensorEntity):
         """Return unique id."""
         # All entities must have a unique id.  Think carefully what you want this to be as
         # changing it later will cause HA to create new entities.
-        return f"{DOMAIN}-{self.device.mac}-{self.attribute}"
+        return f"{DOMAIN}-{self.device_mac}-{self.attribute}"
 
     @property
     def extra_state_attributes(self):
