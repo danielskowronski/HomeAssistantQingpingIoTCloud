@@ -138,7 +138,7 @@ async def handle_webhook(
         new_data = {}
 
         # FIXME: sort incoming_data["data"] by time as ther emay be more than one frame
-        for property_name, property_data in incoming_data["data"][0].items():
+        for property_name, property_data in incoming_data["payload"]["data"][0].items():
           new_data[property_name] = QingpingDeviceProperty.QingpingDeviceProperty(
             property=property_name,
             value=property_data.get("value", None),
