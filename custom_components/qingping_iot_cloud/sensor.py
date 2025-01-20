@@ -1,8 +1,7 @@
 """Interfaces with the Integration 101 Template api sensors."""
 
-import math
-import logging
 import datetime
+import logging
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -16,8 +15,8 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-#from .api import Device, DeviceType
-from qingping_iot_cloud import QingpingCloud, QingpingDevice, QingpingDeviceProperty
+from qingping_iot_cloud import QingpingDevice
+
 from .const import DOMAIN, MAX_DELAY_MULTIPLIER
 from .coordinator import QingpingCoordinator
 
@@ -28,32 +27,37 @@ async def async_setup_entry(
     hass: HomeAssistant,
     config_entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
-):
+) -> None:
     """Set up the Sensors."""
-    # This gets the data update coordinator from hass.data as specified in your __init__.py
     coordinator: QingpingCoordinator = hass.data[DOMAIN][
         config_entry.entry_id
     ].coordinator
 
-    sensors = [ ]
-    for device in coordinator.data.devices:
-        for property in device.data.keys():
-            sensors.append(QingpingSensor(coordinator, device, property))
+    sensors = []
+    sensors.extend(
+        QingpingSensor(coordinator, device, attribute)
+        for device in coordinator.data.devices
+        for attribute in device.data
+    )
     async_add_entities(sensors)
 
 
 class QingpingSensor(CoordinatorEntity, SensorEntity):
     """Implementation of a sensor."""
 
-    def __init__(self, coordinator: QingpingCoordinator, device: QingpingDevice, attribute: str) -> None:
+    def __init__(
+        self, coordinator: QingpingCoordinator, device: QingpingDevice, attribute: str
+    ) -> None:
         """Initialise sensor."""
         super().__init__(coordinator)
         self.device = device
         self.device_mac = device.mac
-        self.device_mac_formatted = (":".join(self.device_mac[i:i+2] for i in range(0, len(self.device_mac), 2))).upper()
+        self.device_mac_formatted = (
+            ":".join(self.device_mac[i:i+2] for i in range(0, len(self.device_mac), 2))
+        ).upper()
         self.attribute = attribute
         self._parse_values()
-        
+
     def _parse_values(self) -> None:
         self._raw_value = self.device.get_property(self.attribute).get_ha_value()
         self._is_missing = self._raw_value is None
@@ -61,7 +65,6 @@ class QingpingSensor(CoordinatorEntity, SensorEntity):
     @callback
     def _handle_coordinator_update(self) -> None:
         """Update sensor with latest data from coordinator."""
-        # This method is called by your DataUpdateCoordinator when a successful update runs.
         self.device = self.coordinator.get_device_by_mac(
             self.device_mac
         )
@@ -71,19 +74,13 @@ class QingpingSensor(CoordinatorEntity, SensorEntity):
     @property
     def device_class(self) -> str:
         """Return device class."""
-        # https://developers.home-assistant.io/docs/core/entity/sensor/#available-device-classes
-        # FIXME: support proper device classes
         ha_class = self.device.get_property(self.attribute).get_ha_class()
         if ha_class is None:
             return None
-        else:
-            return SensorDeviceClass(ha_class)
+        return SensorDeviceClass(ha_class)
     @property
     def device_info(self) -> DeviceInfo:
         """Return device information."""
-        # Identifiers are what group entities into the same device.
-        # If your device is created elsewhere, you can just specify the indentifiers parameter.
-        # If your device connects via another device, add via_device parameter with the indentifiers of that device.
         return DeviceInfo(
             name=f"{self.device.name}",
             manufacturer="Qingping",
@@ -101,26 +98,33 @@ class QingpingSensor(CoordinatorEntity, SensorEntity):
     @property
     def name(self) -> str:
         """Return the name of the sensor."""
-        return f"{self.device.name} {self.device.get_property(self.attribute).get_ha_title()}"
-          
+        ha_title = self.device.get_property(self.attribute).get_ha_title()
+        return f"{self.device.name} {ha_title}"
+
 
     def _seconds_since_last_update(self) -> int:
         device_last_timestamp = int(self.device.get_property("timestamp").value)
-        now = int(datetime.datetime.timestamp(datetime.datetime.now()))
-        delta = now - device_last_timestamp
-        return delta
+        now = int(datetime.datetime.timestamp(datetime.datetime.now(datetime.UTC)))
+        return now - device_last_timestamp
 
     @property
-    def available(self):
+    def available(self) -> bool:
+        """Return True if the sensor is available."""
+        if self.attribute == "timestamp": # timestamp should always be reported
+            return True
+        # last_update_success is False when UpdateFailed is raised
         if self.coordinator.last_update_success:
             if self._is_missing:
                 return False
-            if self.attribute == "timestamp": # timestamp should always be reported
-                return True
             delta = self._seconds_since_last_update()
             max_delay = MAX_DELAY_MULTIPLIER*self.device.setting_report_interval
             if delta > max_delay:
-                _LOGGER.info(f"Device {self.device_mac} is offline for {delta} seconds, which is more than MAX_DELAY_MULTIPLIER({MAX_DELAY_MULTIPLIER}) * setting_report_interval({self.device.setting_report_interval})")
+                message = (
+                    f"Device {self.device_mac} is offline for {delta} seconds, which is"
+                    f" more than MAX_DELAY_MULTIPLIER({MAX_DELAY_MULTIPLIER}) * "
+                    f"setting_report_interval({self.device.setting_report_interval})"
+                )
+                _LOGGER.info(message)
                 return False
             return True
         return False
@@ -128,8 +132,6 @@ class QingpingSensor(CoordinatorEntity, SensorEntity):
     @property
     def native_value(self) -> int | float:
         """Return the state of the entity."""
-        # Using native value and native unit of measurement, allows you to change units
-        # in Lovelace and HA will automatically calculate the correct value.
         return STATE_UNAVAILABLE if not self.available else self._raw_value
 
     @property
@@ -148,14 +150,11 @@ class QingpingSensor(CoordinatorEntity, SensorEntity):
     @property
     def unique_id(self) -> str:
         """Return unique id."""
-        # All entities must have a unique id.  Think carefully what you want this to be as
-        # changing it later will cause HA to create new entities.
         return f"{DOMAIN}-{self.device_mac}-{self.attribute}"
 
     @property
-    def extra_state_attributes(self):
+    def extra_state_attributes(self) -> dict:
         """Return the extra state attributes."""
-        # Add any additional attributes you want on your sensor.
         attrs = {}
         attrs["timestamp"] = self.device.get_property("timestamp").value
         attrs["nickname"] = self.device.name
@@ -163,5 +162,3 @@ class QingpingSensor(CoordinatorEntity, SensorEntity):
         attrs["setting_report_interval"] = self.device.setting_report_interval
         attrs["setting_collect_interval"] = self.device.setting_collect_interval
         return attrs
-
-# TODO: add binary sensor to check if device is considered offline
