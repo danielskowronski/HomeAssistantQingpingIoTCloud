@@ -14,3 +14,4 @@
 - [x] handle total API failure (immediately set data to unavailable)
 - [x] test what happens when new device is added
 - [x] test what happens when sensors are added
+- [.] support webhook (https://developer.qingping.co/personal/dataPushSetting) - using public nabu.casa endpoint

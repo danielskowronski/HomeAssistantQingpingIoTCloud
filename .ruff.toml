@@ -16,6 +16,14 @@ ignore = [
     "ISC001", # incompatible with formatter
     "TC002", # Move third-party import ... into a type-checking block
     "TC003", # Move standard library import ... into a type-checking block
+
+
+    # handling this in TODO.md # TODO: maybe start using ruff for that?
+    "TD001", # Invalid TODO tag: `FIXME`
+    "TD002", # Missing author in TODO
+    "TD003", # Missing issue link on the line following this TODO
+    "FIX001", # Line contains FIXME, consider resolving the issue
+    "FIX002", # Line contains TODO, consider resolving the issue
 ]
 
 [lint.flake8-pytest-style]

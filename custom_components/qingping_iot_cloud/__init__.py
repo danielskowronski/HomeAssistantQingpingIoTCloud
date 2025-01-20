@@ -2,16 +2,29 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from aiohttp.web import Request
+from homeassistant.components.cloud import async_get_or_create_cloudhook
+from homeassistant.components.persistent_notification import (
+    create as persistent_notification_create,
+)
+from homeassistant.components.webhook import (
+    async_generate_url,
+    async_register,
+    async_unregister,
+)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.device_registry import DeviceEntry
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+
+from qingping_iot_cloud import QingpingDeviceProperty
 
 from .const import DOMAIN
 from .coordinator import QingpingCoordinator
@@ -46,6 +59,38 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
 
     await hass.config_entries.async_forward_entry_setups(config_entry, PLATFORMS)
 
+    if config_entry.entry_id not in hass.data.get("webhook", {}):
+        async_register(
+            hass,
+            DOMAIN,
+            f"{DOMAIN} - {config_entry.entry_id}",
+            config_entry.entry_id,
+            handle_webhook
+        )
+        _LOGGER.info(
+            "Registered webhook %s for config entry %s",
+            config_entry.entry_id,
+            config_entry.entry_id
+        )
+    else:
+        _LOGGER.info("webhook %s already registered", config_entry.entry_id)
+
+    webhook_url = async_generate_url(hass, config_entry.entry_id)
+    with contextlib.suppress(Exception):
+        webhook_url = await async_get_or_create_cloudhook(hass, config_entry.entry_id)
+
+    persistent_notification_create(
+        hass,
+        (
+            f"Your webhook public URL is: {webhook_url}\n\n"
+            "Go to https://developer.qingping.co/personal/dataPushSetting"
+            "and provide the above URL."
+        ), # TODO: handle local only URL
+        title="Qingping IoT Cloud - ability to use incoming Webhooks",
+        notification_id="qingping_notification"
+    )
+
+
     return True
 
 
@@ -72,7 +117,40 @@ async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> 
         config_entry, PLATFORMS
     )
 
+    async_unregister(hass, config_entry.entry_id)
+
     if unload_ok:
         hass.data[DOMAIN].pop(config_entry.entry_id)
-
     return unload_ok
+
+@callback
+async def handle_webhook(
+    hass: HomeAssistant, webhook_id: str, request: Request
+) -> None:
+    """Handle incoming webhook data."""
+    try:
+        # Parse the incoming data (assuming JSON payload)
+        incoming_data = await request.json()
+        diagnose_data = f"{webhook_id} received webhook payload: {incoming_data}"
+        _LOGGER.debug(diagnose_data)
+
+        mac = incoming_data["info"]["mac"] # required for data to be valid
+        new_data = {}
+
+        # FIXME: sort incoming_data["data"] by time as ther emay be more than one frame
+        for property_name, property_data in incoming_data["data"][0].items():
+          new_data[property_name] = QingpingDeviceProperty.QingpingDeviceProperty(
+            property=property_name,
+            value=property_data.get("value", None),
+            status=property_data.get("status", 0)
+          )
+        coordinator = hass.data[DOMAIN][webhook_id].coordinator
+        coordinator.get_device_by_mac(mac).data = new_data
+        hass.data[DOMAIN][webhook_id].coordinator.async_set_updated_data(coordinator.data)
+    except Exception:
+        diagnose_data = (
+            f"{webhook_id} received webhook payload that's not valid: "
+            f"{await request.text()}"
+        )
+        _LOGGER.warning(diagnose_data)
+        raise
