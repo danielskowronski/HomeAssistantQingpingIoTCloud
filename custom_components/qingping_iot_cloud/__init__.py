@@ -129,22 +129,28 @@ async def handle_webhook(
 ) -> None:
     """Handle incoming webhook data."""
     try:
-        # Parse the incoming data (assuming JSON payload)
         incoming_data = await request.json()
         diagnose_data = f"{webhook_id} received webhook payload: {incoming_data}"
         _LOGGER.debug(diagnose_data)
 
         mac = incoming_data["payload"]["info"]["mac"] # required for data to be valid
-        new_data = {}
+        coordinator = hass.data[DOMAIN][webhook_id].coordinator
+        new_data = coordinator.get_device_by_mac(mac).data
 
-        # FIXME: sort incoming_data["data"] by time as ther emay be more than one frame
-        for property_name, property_data in incoming_data["data"][0].items():
+        # TODO: can `data` be longer than 1 element?
+        l = len(incoming_data["payload"]["data"])
+        if l != 1:
+            msg = (
+                f"WEBHOOK_PAYLOAD_DATA_LEN webhook {webhook_id} received payload with "
+                f"{l} elements in data, expected 1"
+            )
+            _LOGGER.warning(msg)
+        for property_name, property_data in incoming_data["payload"]["data"][0].items():
           new_data[property_name] = QingpingDeviceProperty.QingpingDeviceProperty(
             property=property_name,
             value=property_data.get("value", None),
             status=property_data.get("status", 0)
           )
-        coordinator = hass.data[DOMAIN][webhook_id].coordinator
         coordinator.get_device_by_mac(mac).data = new_data
         hass.data[DOMAIN][webhook_id].coordinator.async_set_updated_data(coordinator.data)
     except Exception:
